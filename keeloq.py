@@ -1,5 +1,5 @@
 # import leekoq
-import math
+# import math
 
 
 # key = 0xCAFEDEAD
@@ -9,7 +9,7 @@ import math
 # print(hex(plain))
 
 
-class KeyloqKey:
+class KeeloqKey:
     def __init__(self, key: str):
         self.key = key.replace(" ", "")
         self.is_valid = self.validate()
@@ -28,9 +28,3 @@ class KeyloqKey:
 
     def inverted_to_hex(self):
         return hex(int(self.inverted_binary, 2))
-
-
-if __name__ == '__main__':
-    key = KeyloqKey("c0 2f 91 57 2a 68 f3 14")
-
-    print(f"Fixed for \"{key.key}\" = {key.fixed}")
