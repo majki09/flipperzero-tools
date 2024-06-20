@@ -1,14 +1,3 @@
-# import leekoq
-# import math
-
-
-# key = 0xCAFEDEAD
-# cipher = leekoq.encrypt(0xea89e403, key)
-# print(hex(cipher))
-# plain = leekoq.decrypt(cipher, key)
-# print(hex(plain))
-
-
 class KeeloqKey:
     def __init__(self, key: str):
         self.key = key.replace(" ", "")
