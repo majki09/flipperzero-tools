@@ -1,8 +1,92 @@
 import csv
-import logging
+import json.decoder
+import jsonpickle
 import keeloq
+import logging
 import os
 import sub_file
+
+
+class Key:
+    def __init__(self):
+        self.serial_number = None
+        self.occurrences = {}
+        self.note = None
+        self.tags = []
+
+
+class Occurrence:
+    def __init__(self):
+        self.datetime = None
+        self.scan_place = None
+        self.button = None
+        self.counter = None
+        self.gps_loc = None
+        self.filename = ""
+
+
+class Database2:
+    def __init__(self):
+        self.keys = {}
+        self.ignore_without_date = True
+
+    def key_exists(self, key):
+        return key["details"].serial_number in self.keys
+
+    def occurrence_exists(self, key, occurrence):
+        return occurrence in key.occurrences
+
+    def add_key(self, key):
+        # check if key has a valid datetime
+        if self.ignore_without_date and key["subfile"].datetime is None:
+            logger.info(f"Keyfile {key['subfile'].filename} has been ignored because it doesn't have a valid datetime.")
+            return False
+
+        # check if key already exists in database
+        if self.key_exists(key):
+            new_key = self.keys[key["details"].serial_number]
+            logger.info(f"Key {new_key} loaded from database, it's already there.")
+
+            occurrence = key["subfile"].datetime
+            # check if occurrence already exists
+            if self.occurrence_exists(new_key, occurrence):
+                # new_occurrence = occurrence
+                logger.info(f"Occurrence {occurrence} loaded from database, it's already there.")
+
+                return True
+            else:
+                new_occurrence = self.add_occurrence_from_key(key)
+        else:
+            new_key = Key()
+            new_key.serial_number = key["details"].serial_number
+
+            new_occurrence = self.add_occurrence_from_key(key)
+
+        new_key.occurrences.update({new_occurrence.datetime: new_occurrence})
+        self.keys.update({new_key.serial_number: new_key})
+
+    def add_occurrence_from_key(self, key):
+        new_occurrence = Occurrence()
+        new_occurrence.datetime = key["subfile"].datetime if not None else ""
+        # new_occurrence.scan_place = ""
+        new_occurrence.button = key["details"].button
+        new_occurrence.filename = key["subfile"].filename
+
+        return new_occurrence
+
+    def save_to_file(self):
+        # jsonpickle.set_encoder_options("json", encoding="utf8")
+        json_string = jsonpickle.encode(self.keys)
+        with open("db2.json", "w") as file:
+            file.write(json_string)
+
+    def load_from_file(self):
+        try:
+            jsonpickle.set_decoder_options("json", encoding="utf8")
+            with open("db2.json", "r") as file:
+                self.keys = jsonpickle.decode(file.read())
+        except json.decoder.JSONDecodeError:
+            logger.error("Cannot load database from JSON file.")
 
 
 class Database:
@@ -125,6 +209,8 @@ class Aggregator:
         self.input_dir = "input"
         self.sub_files = []
         self.database = Database()
+        self.database2 = Database2()
+
         self.log = Log()
         self.keys = []
 
@@ -160,10 +246,14 @@ class Aggregator:
         return keys
 
     def process(self):
+        self.database2.load_from_file()
+
         for key in self.keys:
             self.database.add(key)
+            self.database2.add_key(key)
         self.log.add(self.keys)
         self.database.save_to_file()
+        self.database2.save_to_file()
 
     def find_key(self, filename: str):
         """
