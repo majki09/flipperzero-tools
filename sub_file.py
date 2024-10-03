@@ -37,11 +37,12 @@ class SubFile:
                 return self.file_object[idx].split(":")[1].strip()
 
     def get_datetime(self):
-        if len(re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", self.filename)) > 0:
+        match = re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", self.filename)
+        if len(match) > 0:
             try:
-                date_time = self.filename[-23:-4]
-                date = date_time[:10].replace("_", "-")
-                time = date_time[-8:].replace("_", ":")
+                date_time = match[0]
+                date = date_time.split('-')[0].replace("_", "-")
+                time = date_time.split('-')[1].replace("_", ":")
 
                 return f"{date} {time}"
             except:
