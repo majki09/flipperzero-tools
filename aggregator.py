@@ -89,6 +89,14 @@ class Database2:
 
         return new_occurrence
 
+    def update_scanplace_for_occurences(self, start_date: str, end_date: str, new_scanplace: str):
+        for key in self.keys.values():
+            for occurrence in key.occurrences.values():
+                datetime_iso = datetime.fromisoformat(occurrence.datetime)
+                if datetime.fromisoformat(start_date) < datetime_iso < datetime.fromisoformat(end_date):
+                    if occurrence.scan_place != new_scanplace:
+                        occurrence.scan_place = new_scanplace
+
     def save_to_file(self):
         # jsonpickle.set_encoder_options("json", encoding="utf8")
         json_string = jsonpickle.encode(self.keys)
