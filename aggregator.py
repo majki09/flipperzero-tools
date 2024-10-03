@@ -4,7 +4,10 @@ import jsonpickle
 import keeloq
 import logging
 import os
+import re
 import sub_file
+
+from datetime import datetime
 
 
 class Key:
@@ -24,6 +27,21 @@ class Occurrence:
         self.gps_loc = None
         self.filename = ""
 
+    @staticmethod
+    def get_name_from_filename(filename:str):
+        match = re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2,}", filename)
+
+        if len(match) > 0:
+            try:
+                date_time = match[0]
+                date = date_time.split('-')[0].replace("_", "-")
+                time_wsufix = date_time.split('-')[1].replace("_", ":")
+
+                return f"{date} {time_wsufix}"
+            except:
+                return None
+        return None
+
 
 class Database2:
     def __init__(self):
@@ -32,9 +50,6 @@ class Database2:
 
     def key_exists(self, key):
         return key["details"].serial_number in self.keys
-
-    def occurrence_exists(self, key, occurrence):
-        return occurrence in key.occurrences
 
     def add_key(self, key):
         # check if key has a valid datetime
@@ -47,9 +62,9 @@ class Database2:
             new_key = self.keys[key["details"].serial_number]
             logger.info(f"Key {new_key} loaded from database, it's already there.")
 
-            occurrence = key["subfile"].datetime
+            occurrence = Occurrence.get_name_from_filename(key["subfile"].filename)
             # check if occurrence already exists
-            if self.occurrence_exists(new_key, occurrence):
+            if occurrence in new_key.occurrences:
                 # new_occurrence = occurrence
                 logger.info(f"Occurrence {occurrence} loaded from database, it's already there.")
 
