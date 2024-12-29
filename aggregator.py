@@ -98,15 +98,16 @@ class Database2:
                         occurrence.scan_place = new_scanplace
 
     def save_to_file(self):
-        # jsonpickle.set_encoder_options("json", encoding="utf8")
+        jsonpickle.set_encoder_options("json", ensure_ascii=False)
+        # self.update_scanplace_for_occurences("2024-05-28 07:30:00", "2024-05-28 07:31:00", "podleska")
         json_string = jsonpickle.encode(self.keys)
-        with open("db2.json", "w") as file:
+        with open("db2.json", "w", encoding="utf8") as file:
             file.write(json_string)
 
     def load_from_file(self):
         try:
             jsonpickle.set_decoder_options("json", encoding="utf8")
-            with open("db2.json", "r") as file:
+            with open("db2.json", "r", encoding="utf8") as file:
                 self.keys = jsonpickle.decode(file.read())
         except json.decoder.JSONDecodeError:
             logger.error("Cannot load database from JSON file.")
@@ -248,10 +249,14 @@ class Aggregator:
         for file in files:
             subfile = sub_file.SubFile(self.input_dir + "/" + file)
 
-            if not "Flipper SubGhz Key File" in subfile.file_object[0]:
-                logger.warning(f"File \"{file}\" will not be processed. Invalid type.")
+            # check if subfile is not empty
+            if len(subfile.file_object) > 0:
+                if not "Flipper SubGhz Key File" in subfile.file_object[0]:
+                    logger.warning(f"File \"{file}\" will not be processed. Invalid type.")
+                else:
+                    files_objects.append(subfile)
             else:
-                files_objects.append(subfile)
+                logger.warning(f"File {file} is empty, ignoring.")
 
         return files_objects
 
