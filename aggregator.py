@@ -5,6 +5,7 @@ import keeloq
 import logging
 import os
 import re
+import sqlite3
 import sub_file
 
 from datetime import datetime
@@ -28,7 +29,7 @@ class Occurrence:
         self.filename = ""
 
     @staticmethod
-    def get_name_from_filename(filename:str):
+    def get_name_from_filename(filename: str):
         match = re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2,}", filename)
 
         if len(match) > 0:
@@ -60,22 +61,27 @@ class Database2:
         # check if key already exists in database
         if self.key_exists(key):
             new_key = self.keys[key["details"].serial_number]
-            logger.info(f"Key {new_key} loaded from database, it's already there.")
+            # logger.info(f"Key {new_key} already in database, skipping.")
 
             occurrence = Occurrence.get_name_from_filename(key["subfile"].filename)
             # check if occurrence already exists
             if occurrence in new_key.occurrences:
                 # new_occurrence = occurrence
-                logger.info(f"Occurrence {occurrence} loaded from database, it's already there.")
+                # logger.info(f"Occurrence \"{occurrence}\" already in database, skipping.")
 
                 return True
             else:
                 new_occurrence = self.add_occurrence_from_key(key)
+                logger.info(
+                    f"New occurrence \"{new_occurrence.datetime}\" for existing key {new_key.serial_number} from file {new_occurrence.filename} added.")
         else:
             new_key = Key()
             new_key.serial_number = key["details"].serial_number
+            logger.info(f"New key {new_key.serial_number} from file {key['subfile'].filename} added.")
 
             new_occurrence = self.add_occurrence_from_key(key)
+            logger.info(
+                f"New occurrence \"{new_occurrence.datetime}\" for key {new_key.serial_number} from file {key['subfile'].filename} added.")
 
         new_key.occurrences.update({new_occurrence.datetime: new_occurrence})
         self.keys.update({new_key.serial_number: new_key})
@@ -96,6 +102,22 @@ class Database2:
                 if datetime.fromisoformat(start_date) < datetime_iso < datetime.fromisoformat(end_date):
                     if occurrence.scan_place != new_scanplace:
                         occurrence.scan_place = new_scanplace
+
+    def convert_to_sqlite(self, con):
+        cur = con.cursor()
+        for key in self.keys.values():
+            for occu in key.occurrences.values():
+                try:
+                    scan_place = "" if occu.scan_place is None else occu.scan_place
+                    counter = "" if occu.counter is None else occu.counter
+                    gps = "" if occu.gps_loc is None else occu.gps_loc
+                    print(occu.button, counter, occu.datetime, occu.filename, gps, key.serial_number, scan_place)
+                    cur.execute("INSERT INTO occurences VALUES (?, ?, ?, ?, ?, ?, ?)",
+                                [occu.button, counter, occu.datetime, occu.filename, gps, key.serial_number,
+                                 scan_place])
+                except sqlite3.IntegrityError as IE:
+                    print(IE)
+        con.commit()
 
     def save_to_file(self):
         jsonpickle.set_encoder_options("json", ensure_ascii=False)
@@ -234,6 +256,8 @@ class Aggregator:
         self.sub_files = []
         self.database = Database()
         self.database2 = Database2()
+        self.con = sqlite3.connect("keeloqs.db")
+        # logger.info("keeloqs.db SQLite database loaded.")
 
         self.log = Log()
         self.keys = []
@@ -275,6 +299,7 @@ class Aggregator:
 
     def process(self):
         self.database2.load_from_file()
+        self.database2.convert_to_sqlite(self.con)
 
         for key in self.keys:
             self.database.add(key)
@@ -299,9 +324,9 @@ class Aggregator:
 if __name__ == '__main__':
     logging.basicConfig(filename="log.log",
                         filemode="a",
-                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                        datefmt='%H:%M:%S',
-                        level=logging.WARNING)
+                        format='%(asctime)s %(levelname)s %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        level=logging.INFO)
 
     logger = logging.getLogger("aggregator")
 
