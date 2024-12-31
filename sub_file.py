@@ -12,13 +12,13 @@ class SubFile:
         self.key = None
         self.manufacture = None
 
-        self.load_file(path)
+        self.file_object = self.load_file(path)
         self.parse_file()
         self.datetime = self.get_datetime()
 
     def load_file(self, path: str):
         with open(path, "r") as file:
-            self.file_object = file.readlines()
+            return file.readlines()
 
     def parse_file(self):
         try:
@@ -37,6 +37,7 @@ class SubFile:
                 return self.file_object[idx].split(":")[1].strip()
 
     def get_datetime(self):
+        # dates with _
         match = re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}", self.filename)
         if len(match) > 0:
             try:
@@ -47,4 +48,21 @@ class SubFile:
                 return f"{date} {time}"
             except:
                 return None
+
+        # dates without _
+        match = re.findall("-\d{4}\d{2}\d{2}-\d{2}\d{2}\d{2}", self.filename)
+        if len(match) > 0:
+            try:
+                date_time = match[0][1:]
+                date, time = date_time.split('-')
+                date = date[:4] + '-' + date[4:]
+                date = date[:7] + '-' + date[7:]
+                time = time[:2] + ':' + time[2:]
+                time = time[:5] + ':' + time[5:]
+
+                return f"{date} {time}"
+            except:
+                return None
+
+        return None
 
