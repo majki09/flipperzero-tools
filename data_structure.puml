@@ -24,40 +24,57 @@ entity "KeeloqKey" as kk {
   * key : text
   --
   * is_valid : bool
-  * second_part  : text
-  * inverted_binary  : text
+  * second_part : text
+  * inverted_binary : text
   * fixed : text
   * button : text
 }
 
 entity "Database2" as db2 {
   * keys : dict
+  * receivers : list
 }
 
 entity "Key" as k {
   * serial_number : text
   * occurrences : dict
+  * receivers : list
   --
   note : text
   tags : list
 }
 
-entity "Occcurrence" as o {
+entity "Occurrence" as o {
   * filename : text
   --
   * datetime : datetime
   * counter : text
   * button : text
   --
-  gps_loc : text
+  loc_lon : text
+  loc_lat : text
   scan_place : text
+}
+
+entity "Receiver" as r {
+  * name : text
+  * keys : list
+  * type : text
+  --
+  loc_lon : text
+  loc_lat : text
+  --
+  protocol : text
 }
 
 sf::key ||--|| kk::key
 o::filename ||--|| sf::filename
 o::datetime ||--|| sf::datetime
 db2::keys }|--|| k
+db2::receivers }|--|| r
 o::button ||--|| kk::button
 k::occurrences }|--|| o
 k::serial_number ||--|| kk::serial_number
+k::receivers }|--|| r
+r::keys }|--|| k
 @enduml

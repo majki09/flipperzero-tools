@@ -1,36 +1,40 @@
 import csv
-import keeloq
 import logging
-import os
 import re
 import sqlite3
+from dataclasses import dataclass, field
+from datetime import datetime
+from pathlib import Path
+from typing import Dict, List, Optional
+
+import keeloq
 import sub_file
 
-from datetime import datetime
+logger = logging.getLogger(__name__)
 
 
+@dataclass
 class Key:
-    def __init__(self):
-        self.serial_number = None
-        self.occurrences = {}
-        self.note = None
-        self.tags = []
+    serial_number: Optional[str] = None
+    occurrences: Dict[str, "Occurrence"] = field(default_factory=dict)
+    note: Optional[str] = None
+    tags: List[str] = field(default_factory=list)
 
 
+@dataclass
 class Occurrence:
-    def __init__(self):
-        self.name = ""
-        self.datetime = None
-        self.scan_place = None
-        self.button = None
-        self.counter = None
-        self.gps_loc = None
-        self.filename = ""
+    name: str = ""
+    datetime: Optional[str] = None
+    scan_place: Optional[str] = None
+    button: Optional[str] = None
+    counter: Optional[str] = None
+    gps_loc: Optional[str] = None
+    filename: str = ""
 
     @staticmethod
     def get_name_from_filename(filename: str):
         # dates with _
-        match = re.findall("\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2,}", filename)
+        match = re.findall(r"\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2,}", filename)
 
         if len(match) > 0:
             try:
@@ -43,7 +47,7 @@ class Occurrence:
                 return None
 
         # dates without _
-        match = re.findall("-\d{4}\d{2}\d{2}-\d{2}\d{2}\d{2,}", filename)
+        match = re.findall(r"-\d{4}\d{2}\d{2}-\d{2}\d{2}\d{2,}", filename)
         if len(match) > 0:
             try:
                 date_time = match[0][1:]
@@ -61,12 +65,13 @@ class Occurrence:
 
 
 class SQLiteDatabase:
-    def __init__(self, db_file):
+    def __init__(self, db_file, logger_instance=None):
         self.db_file = db_file
         self.con = sqlite3.connect(self.db_file)
         self.cur = self.con.cursor()
         self.remotes = {}
         self.ignore_without_date = True
+        self.logger = logger_instance or logging.getLogger(__name__)
 
     def key_exists(self, key):
         return key["details"].serial_number in self.remotes
@@ -74,7 +79,9 @@ class SQLiteDatabase:
     def add_key(self, key):
         # check if key has a valid datetime
         if self.ignore_without_date and key["subfile"].datetime is None:
-            logger.info(f"Keyfile \"{key['subfile'].filename}\" has been ignored because it doesn't have a valid datetime.")
+            self.logger.info(
+                f"Keyfile \"{key['subfile'].filename}\" has been ignored because it doesn't have a valid datetime."
+            )
             return False
 
         # check if key already exists in database
@@ -92,10 +99,12 @@ class SQLiteDatabase:
             else:
                 new_occurrence = self.add_occurrence_from_key(key)
                 if new_occurrence.name is None:
-                    logger.info(f"Occurrence \"{key['subfile'].filename}\" has been ignored because could not get a valid datetime.")
+                    self.logger.info(
+                        f"Occurrence \"{key['subfile'].filename}\" has been ignored because could not get a valid datetime."
+                    )
                     return False
 
-                logger.info(
+                self.logger.info(
                     f"New occurrence \"{new_occurrence.name}\" for existing key {new_key.serial_number} from file {new_occurrence.filename} added.")
         else:
             # adding new KEY
@@ -107,14 +116,16 @@ class SQLiteDatabase:
             self.cur.execute("INSERT INTO remotes VALUES (?, ?, ?)", [new_key.serial_number, note, tags])
             self.con.commit()
 
-            logger.info(f"New key {new_key.serial_number} from file {key['subfile'].filename} added.")
+            self.logger.info(f"New key {new_key.serial_number} from file {key['subfile'].filename} added.")
 
             # adding new OCCURRENCE
             new_occurrence = self.add_occurrence_from_key(key)
             if new_occurrence.name is None:
-                logger.info(f"Occurrence \"{key['subfile'].filename}\" has been ignored because could not get a valid datetime.")
+                self.logger.info(
+                    f"Occurrence \"{key['subfile'].filename}\" has been ignored because could not get a valid datetime."
+                )
                 return False
-            logger.info(
+            self.logger.info(
                 f"New occurrence \"{new_occurrence.name}\" for NEW key {new_key.serial_number} from file {key['subfile'].filename} added.")
 
         new_key.occurrences.update({new_occurrence.datetime: new_occurrence})
@@ -134,7 +145,7 @@ class SQLiteDatabase:
         gps = "" if new_occurrence.gps_loc is None else new_occurrence.gps_loc
         # print(new_occurrence.button, counter, new_occurrence.datetime, new_occurrence.filename, gps, key.serial_number, scan_place)
         try:
-            self.cur.execute("INSERT INTO occurences VALUES (?, ?, ?, ?, ?, ?, ?)",
+            self.cur.execute("INSERT INTO occurrences VALUES (?, ?, ?, ?, ?, ?, ?)",
                         [new_occurrence.button,
                          counter,
                          new_occurrence.name,
@@ -144,11 +155,11 @@ class SQLiteDatabase:
                          scan_place])
             self.con.commit()
         except sqlite3.IntegrityError:
-            logger.error(f"Could not INSERT {new_occurrence.filename} into SQLite database!")
+            self.logger.error(f"Could not INSERT {new_occurrence.filename} into SQLite database!")
 
         return new_occurrence
 
-    def update_scanplace_for_occurences(self, start_date: str, end_date: str, new_scanplace: str):
+    def update_scanplace_for_occurrences(self, start_date: str, end_date: str, new_scanplace: str):
         for key in self.remotes.values():
             for occurrence in key.occurrences.values():
                 datetime_iso = datetime.fromisoformat(occurrence.datetime)
@@ -160,6 +171,12 @@ class SQLiteDatabase:
         self.get_remotes()
         self.get_occurrences()
 
+    def close(self):
+        try:
+            self.cur.close()
+        finally:
+            self.con.close()
+
     def get_remotes(self):
         self.cur.execute("SELECT * FROM remotes")
         rows = self.cur.fetchall()
@@ -168,10 +185,10 @@ class SQLiteDatabase:
             loaded_key.serial_number, loaded_key.note, loaded_key.tags = row
             self.remotes.update({loaded_key.serial_number: loaded_key})
 
-        logger.info(f"\"remotes\" table from SQLite database loaded with {len(rows)} rows.")
+        self.logger.info(f"\"remotes\" table from SQLite database loaded with {len(rows)} rows.")
 
     def get_occurrences(self):
-        self.cur.execute("SELECT * FROM occurences")
+        self.cur.execute("SELECT * FROM occurrences")
         rows = self.cur.fetchall()
         for row in rows:
             loaded_occu = Occurrence()
@@ -179,7 +196,7 @@ class SQLiteDatabase:
               remote_sn, loaded_occu.scan_place = row
             self.remotes[remote_sn].occurrences.update({loaded_occu.datetime: loaded_occu})
 
-        logger.info(f"\"occurrences\" table from SQLite database loaded with {len(rows)} rows.")
+        self.logger.info(f"\"occurrences\" table from SQLite database loaded with {len(rows)} rows.")
 
 class Log:
     key_template = {"datetime": None,
@@ -212,10 +229,11 @@ class Log:
 
 
 class Aggregator:
-    def __init__(self):
-        self.input_dir = "input"
+    def __init__(self, input_dir="input", logger_instance=None):
+        self.input_dir = input_dir
         self.sub_files = []
-        self.sql_db = SQLiteDatabase("keeloqs.db")
+        self.logger = logger_instance or logging.getLogger(__name__)
+        self.sql_db = SQLiteDatabase("keeloqs.db", logger_instance=self.logger)
         # logger.info("keeloqs.db SQLite database loaded.")
 
         self.log = Log()
@@ -226,20 +244,29 @@ class Aggregator:
         self.keys = self.keys_collect(self.sub_files)
 
     def get_input_files(self):
-        files = [file for file in os.listdir(self.input_dir) if file.split(".")[1] == "sub"]
+        input_path = Path(self.input_dir)
+        if not input_path.exists():
+            self.logger.warning(f"Input directory \"{self.input_dir}\" does not exist.")
+            return []
+
+        files = [
+            file
+            for file in input_path.iterdir()
+            if file.is_file() and file.suffix.lower() == ".sub"
+        ]
 
         files_objects = []
         for file in files:
-            subfile = sub_file.SubFile(self.input_dir + "/" + file)
+            subfile = sub_file.SubFile(str(file))
 
             # check if subfile is not empty
             if len(subfile.file_object) > 0:
                 if not "Flipper SubGhz Key File" in subfile.file_object[0]:
-                    logger.warning(f"File \"{file}\" will not be processed. Invalid type.")
+                    self.logger.warning(f"File \"{file.name}\" will not be processed. Invalid type.")
                 else:
                     files_objects.append(subfile)
             else:
-                logger.warning(f"File {file} is empty, ignoring.")
+                self.logger.warning(f"File {file.name} is empty, ignoring.")
 
         return files_objects
 
@@ -249,20 +276,36 @@ class Aggregator:
             if subfile.protocol == "KeeLoq":
                 key = {}
                 key["subfile"] = subfile
-                key["details"] = keeloq.KeeloqKey(subfile.key)
+                if not subfile.key:
+                    self.logger.warning(
+                        f"Missing key in file \"{subfile.filename}\", skipping."
+                    )
+                    continue
+                details = keeloq.KeeloqKey(subfile.key)
+                if not details.is_valid:
+                    self.logger.warning(
+                        f"Invalid KeeLoq key in file \"{subfile.filename}\", skipping."
+                    )
+                    continue
+                key["details"] = details
                 keys.append(key)
                 # print(f"SN: {key.serial_number}, button: {key.button}")
 
         return keys
 
     def process(self):
-        self.sql_db.load_from_file()
+        try:
+            self.sql_db.load_from_file()
 
-        for index, key in enumerate(self.keys):
-            print(f'{index}/{len(self.keys)}\t{index / len(self.keys) * 100:.0f}%\tProcessing remote {key["details"].serial_number} '
-                        f'({key["subfile"].filename})')
-            self.sql_db.add_key(key)
-        # self.log.add(self.keys)
+            for index, key in enumerate(self.keys):
+                print(
+                    f'{index}/{len(self.keys)}\t{index / len(self.keys) * 100:.0f}%\tProcessing remote {key["details"].serial_number} '
+                    f'({key["subfile"].filename})'
+                )
+                self.sql_db.add_key(key)
+            # self.log.add(self.keys)
+        finally:
+            self.sql_db.close()
 
     def find_key(self, filename: str):
         """
@@ -274,17 +317,18 @@ class Aggregator:
         :param filename:
         :return:
         """
-        return next(a for a in aggr.keys if filename in a["subfile"].filename)
+        return next(a for a in self.keys if filename in a["subfile"].filename)
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename="log.log",
-                        filemode="a",
-                        format='%(asctime)s %(levelname)s %(message)s',
-                        datefmt='%Y-%m-%d %H:%M:%S',
-                        level=logging.INFO)
+    logging.basicConfig(
+        filename="log.log",
+        filemode="a",
+        format='%(asctime)s %(levelname)s %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+        level=logging.INFO,
+    )
 
-    logger = logging.getLogger("aggregator")
-
-    aggr = Aggregator()
+    main_logger = logging.getLogger("aggregator")
+    aggr = Aggregator(logger_instance=main_logger)
     aggr.process()
